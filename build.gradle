@@ -1,0 +1,142 @@
+buildscript {
+    repositories { maven { url = 'https://maven.minecraftforge.net/' }; mavenCentral() }
+    dependencies { classpath 'net.minecraftforge.gradle:ForgeGradle:3.0.197' }
+}
+apply plugin: 'net.minecraftforge.gradle'
+version = '0.1.5'
+group = 'dev.mcmod.zhenghuocore'
+archivesBaseName = 'zhenghuo-core'
+sourceCompatibility = targetCompatibility = '1.8'
+sourceSets { smoke {} }
+sourceSets.smoke.compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+sourceSets.smoke.runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+minecraft {
+    mappings channel: 'stable', version: '39-1.12'
+    // Dependency ATs must be applied to the development Minecraft JAR by FG3.
+    // Production Forge loads these from the original mod manifests; they are not bundled here.
+    accessTransformer = file('vendor/development_at.cfg')
+    runs {
+        client {
+            forceExit false
+            workingDirectory project.file(project.hasProperty('minimal') ? 'run/minimal-client' : 'run/client')
+            property 'fml.coreMods.load', 'dev.mcmod.zhenghuocore.core.CoreLoadingPlugin,dev.mcmod.ic2grid.core.GridLoadingPlugin' + (project.hasProperty('minimal') ? '' : ',hellfirepvp.astralsorcery.core.AstralCore') + (project.hasProperty('packMana') ? ',quaternary.botaniatweaks.asm.BotaniaTweakerPlugin' : '')
+            if (project.hasProperty('validation')) {
+                property 'zhenghuocore.validation', 'true'
+                property 'zhenghuocore.manaOnly', project.hasProperty('manaValidation').toString()
+                mods {
+                    zhenghuocore { source sourceSets.main }
+                    zhenghuocore_validation { source sourceSets.test }
+                }
+            }
+            if (project.hasProperty('smoke')) {
+                property 'zhenghuocore.smoke', 'true'
+                mods {
+                    zhenghuocore { source sourceSets.main }
+                    zhenghuocore_smoke { source sourceSets.smoke }
+                }
+            }
+        }
+        server { forceExit false; workingDirectory project.file('run/server'); property 'fml.coreMods.load', 'dev.mcmod.zhenghuocore.core.CoreLoadingPlugin,dev.mcmod.ic2grid.core.GridLoadingPlugin' + (project.hasProperty('minimal') ? '' : ',hellfirepvp.astralsorcery.core.AstralCore'); args 'nogui' }
+    }
+}
+repositories { mavenCentral(); flatDir { dirs 'vendor' } }
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.12.2-14.23.5.2864'
+    implementation files('vendor/industrialcraft-2-2.8.222-ex112-api.jar')
+    implementation fg.deobf('local.mods:ic2grid:0.5.1')
+    compileOnly fg.deobf('local.mods:theoneprobe:1.4.28')
+    testImplementation fg.deobf('local.mods:theoneprobe:1.4.28')
+    if (project.hasProperty('validation')) {
+        runtimeOnly fg.deobf('local.mods:theoneprobe:1.4.28')
+        runtimeOnly fg.deobf('local.mods:cyclic:1.20.14')
+    }
+    if (project.hasProperty('packMana')) runtimeOnly fg.deobf('local.mods:botaniatweaks:1.9.1')
+    ['local.mods:buildcraft:8.0.1-robots.1', 'local.mods:botania:1.10-364.4', 'local.mods:astralsorcery:1.10.27'].each { module ->
+        compileOnly fg.deobf(module)
+        testImplementation fg.deobf(module)
+        if (!project.hasProperty('minimal')) runtimeOnly fg.deobf(module)
+    }
+    runtimeOnly fg.deobf('net.industrial-craft:industrialcraft-2:2.8.222-ex112')
+    if (!project.hasProperty('minimal')) runtimeOnly fg.deobf('local.mods:baubles:1.5.2')
+    testImplementation 'junit:junit:4.13.2'
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8'; options.compilerArgs += ['-implicit:none'] }
+// FG3's merge tool sometimes replaces Forge's real Side enum with a historical BUKKIT stub.
+// Repair only the generated dependency in this project's cache, from the official Forge JAR.
+def restoreForgeSide = {
+    def base = file('.gradle-user-home/caches/forge_gradle')
+    def official = new File(base, 'maven_downloader/net/minecraftforge/forge/1.12.2-14.23.5.2864/forge-1.12.2-14.23.5.2864-universal.jar')
+    if (!official.isFile()) return
+    def entry = 'net/minecraftforge/fml/relauncher/Side.class'
+    byte[] correct
+    new java.util.zip.ZipFile(official).withCloseable { zip -> correct = zip.getInputStream(zip.getEntry(entry)).bytes }
+    [new File(base, 'minecraft_user_repo'), file('build/fg_cache')].findAll { it.isDirectory() }.each { repository -> repository.eachFileRecurse { dependency ->
+        if (!dependency.name.endsWith('.jar')) return
+        boolean bad = false
+        new java.util.zip.ZipFile(dependency).withCloseable { zip ->
+            def found = zip.getEntry(entry)
+            if (found != null) bad = new String(zip.getInputStream(found).bytes, 'ISO-8859-1').contains('BUKKIT')
+        }
+        if (bad) {
+            // Rebuild the ZIP instead of editing with Java 8 ZipFS, which can corrupt the central directory.
+            def replacement = new File(dependency.parentFile, dependency.name + '.zhenghuo-repair')
+            new java.util.zip.ZipFile(dependency).withCloseable { input ->
+                new java.util.zip.ZipOutputStream(new FileOutputStream(replacement)).withCloseable { output ->
+                    input.entries().each { original ->
+                        def copy = new java.util.zip.ZipEntry(original.name)
+                        copy.time = original.time
+                        output.putNextEntry(copy)
+                        if (original.name == entry) output.write(correct)
+                        else if (!original.directory) input.getInputStream(original).withCloseable { output << it }
+                        output.closeEntry()
+                    }
+                }
+            }
+            java.nio.file.Files.move(replacement.toPath(), dependency.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            logger.lifecycle('Restored official Forge Side enum in ' + dependency.name)
+        }
+    } }
+}
+tasks.withType(JavaCompile).configureEach { doFirst { restoreForgeSide() } }
+tasks.matching { it.name in ['runClient', 'runServer', 'genIntellijRuns'] }.configureEach { doFirst { restoreForgeSide() } }
+configurations.matching { it.name in ['runtimeClasspath', 'testRuntimeClasspath'] }.all {
+    exclude group: 'net.minecraftforge', module: 'mergetool'
+    ['asm','asm-tree','asm-analysis','asm-util'].each { module -> exclude group: 'org.ow2.asm', module: module }
+}
+processResources {
+    inputs.property 'version', project.version
+    from(sourceSets.main.resources.srcDirs) { include 'mcmod.info'; expand version: project.version }
+    from(sourceSets.main.resources.srcDirs) { exclude 'mcmod.info' }
+}
+jar { manifest { attributes 'Implementation-Version': project.version, 'FMLCorePlugin': 'dev.mcmod.zhenghuocore.core.CoreLoadingPlugin', 'FMLCorePluginContainsFMLMod': 'true' } }
+jar.finalizedBy 'reobfJar'
+task validationJar(type: Jar) {
+    archiveBaseName = 'zhenghuo-runtime-validation'
+    from(sourceSets.test.output) {
+        include 'dev/mcmod/zhenghuocore/validation/**'
+        include 'assets/zhenghuocore_validation/**'
+    }
+    dependsOn testClasses
+}
+reobf { validationJar {} }
+validationJar.finalizedBy 'reobfValidationJar'
+sourceSets.each {
+    def outputDir = layout.buildDirectory.file("sourceSets/$it.name").get().asFile
+    it.output.resourcesDir = outputDir
+    it.java.outputDir = outputDir
+}
+if (project.hasProperty('validation')) tasks.matching { it.name == 'runClient' }.configureEach {
+    dependsOn testClasses
+    doLast {
+        def marker = project.hasProperty('manaValidation') ? 'ZHENGHUO_MANA_TOP ALL PASSED' : 'ZHENGHUO_VALIDATION ALL PASSED'
+        if (!file('run/client/logs/latest.log').getText('UTF-8').contains(marker))
+            throw new GradleException('Runtime validation failed; inspect run/client/logs/latest.log')
+    }
+}
+if (project.hasProperty('smoke')) tasks.matching { it.name == 'runClient' }.configureEach {
+    dependsOn smokeClasses
+    doLast {
+        if (!file('run/minimal-client/logs/latest.log').getText('UTF-8').contains('ZHENGHUO_MINIMAL ALL PASSED'))
+            throw new GradleException('Minimal runtime validation failed')
+    }
+}

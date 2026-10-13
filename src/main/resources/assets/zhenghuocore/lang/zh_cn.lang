@@ -1,0 +1,4 @@
+tile.zhenghuocore.starlight_generator.name=星能发电机
+zhenghuocore.probe.max_output=输出上限：
+zhenghuocore.probe.actual_output=实际输出：
+zhenghuocore.tooltip.voltage_tier=电压等级:%s

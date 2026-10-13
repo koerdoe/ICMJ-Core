@@ -1,0 +1,1 @@
+[{"modid":"zhenghuocore","name":"整活核心","description":"新 EU 电网接入 RF 终端，MJ、Mana 设备直接兼容 RF，并将星辉网络中的星能转为 EU。","version":"${version}","mcversion":"1.12.2","authorList":["mcmod"],"dependencies":["ic2","ic2grid"]}]

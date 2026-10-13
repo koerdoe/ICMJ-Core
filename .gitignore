@@ -1,0 +1,29 @@
+# Local Agent instructions, coordination, handoffs and validation records
+/.agent-docs/
+/.agents/
+/.codex/
+AGENTS.md
+COORDINATION.md
+
+# Dependencies, research, installed instances and generated artifacts
+/.gradle/
+/.gradle-user-home/
+/build/
+/run/
+/vendor/
+/tools/
+/research/
+/integration/
+*.class
+*.jar
+!/gradle/wrapper/gradle-wrapper.jar
+*.log
+
+# Local editor settings and credentials
+/.idea/
+/.vscode/
+*.iml
+.env
+.env.*
+Thumbs.db
+.DS_Store

@@ -1,0 +1,4 @@
+tile.zhenghuocore.starlight_generator.name=Starlight Generator
+zhenghuocore.probe.max_output=Output limit:
+zhenghuocore.probe.actual_output=Actual output:
+zhenghuocore.tooltip.voltage_tier=Voltage tier:%s

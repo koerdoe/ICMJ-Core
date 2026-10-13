@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "normal": {
+      "model": "zhenghuocore:starlight_generator"
+    }
+  }
+}
